@@ -1,0 +1,11 @@
+fastapi>=0.100.0
+uvicorn>=0.22.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+aiohttp>=3.8.5
+beautifulsoup4>=4.12.2
+python-dotenv>=1.0.0
+pytest>=7.3.1
+httpx>=0.24.1
+pytesseract>=0.3.10
+Pillow>=9.0.0
