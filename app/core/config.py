@@ -12,11 +12,8 @@ class Settings(BaseSettings):
     NAVER_CLIENT_ID: str = ""
     NAVER_CLIENT_SECRET: str = ""
     
-    # 필터링 설정
-    SPONSOR_KEYWORDS: List[str] = [
-        "체험단", "협찬", "제공받아", "원고료", "소정의", "revu", 
-        "제작비", "지원받아", "무상제공", "무료체험"
-    ]
+    # OCR 관련 설정
+    TESSERACT_DATA_PATH: str = "tessdata"
     
     # 이미지 URL 패턴
     SPONSOR_IMAGE_URLS: List[str] = [
