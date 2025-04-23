@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
-from typing import Optional
 
 from app.models.schemas import SearchRequest, SearchResponse
 from app.services.filter_service import FilterService
@@ -24,6 +23,7 @@ async def search_blogs(
         )
         
         result = await filter_service.search_and_filter(request)
+                
         return result
     
     except Exception as e:

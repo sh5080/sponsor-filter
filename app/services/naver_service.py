@@ -1,5 +1,5 @@
 import aiohttp
-from typing import Dict, Any, List
+from typing import Dict, Any
 from urllib.parse import quote
 from app.core.config import settings
 
