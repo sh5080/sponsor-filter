@@ -1,24 +1,28 @@
-.PHONY: setup run test lint clean
+.PHONY: setup run test lint clean venv
+
+# 가상 환경 생성
+venv:
+	python3 -m venv .venv
 
 # 기본 환경 설정
-setup:
-	pip install -r requirements.txt
+setup: venv
+	. .venv/bin/activate && python -m pip install -r requirements.txt
 
 # 개발 서버 실행
 run:
-	uvicorn app.main:app --reload
+	. .venv/bin/activate && uvicorn app.main:app --reload
 
 # 프로덕션 서버 실행
 run-prod:
-	uvicorn app.main:app --host 0.0.0.0 --port 8000
+	. .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # 테스트 실행
 test:
-	pytest
+	. .venv/bin/activate && pytest
 
 # 코드 린트 검사
 lint:
-	flake8 app tests
+	. .venv/bin/activate && flake8 app tests
 
 # 캐시 파일 정리
 clean:
