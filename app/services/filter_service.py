@@ -1,6 +1,7 @@
 from typing import Dict, List, Any
 from app.services.naver_service import NaverService
 from app.services.detection_service import DetectionService
+from app.services.pattern_analyzer_service import PatternAnalyzerService
 from app.models.schemas import BlogPost, SearchResponse, SearchRequest
 from app.core.constants import (
     SPONSOR_PATTERNS,
@@ -22,6 +23,7 @@ class FilterService:
     def __init__(self):
         self.naver_service = NaverService()
         self.detection_service = DetectionService()
+        self.pattern_analyzer = PatternAnalyzerService()
         # 동시 요청 제한 (서버 부하 및 차단 방지)
         self.semaphore = asyncio.Semaphore(5)  # 최대 5개 요청 동시 처리
 
@@ -31,7 +33,7 @@ class FilterService:
         async with self.semaphore:
             try:
                 # 1. description에서 협찬 문구 확인 (스니펫 텍스트) - 즉시 처리 가능
-                description_indicators = self.check_description_for_sponsors(
+                description_indicators = self.pattern_analyzer.check_text_for_sponsors(
                     item["description"]
                 )
 
@@ -156,161 +158,6 @@ class FilterService:
 
         return response
 
-    def check_description_for_sponsors(self, description: str) -> List[Dict[str, Any]]:
-        """
-        블로그 포스트 description(스니펫)에서 협찬 문구를 확인합니다.
-
-        Args:
-            description: 블로그 포스트 description 텍스트
-
-        Returns:
-            감지된 협찬 지표 목록
-        """
-        if not description:
-            return []
-
-        found_indicators = []
-
-        # HTML 태그 제거
-        clean_text = re.sub(r"<[^>]+>", "", description)
-
-        # 1. 단일 키워드 확인
-        for keyword in SPONSOR_KEYWORDS:
-            if keyword in clean_text:
-                found_indicators.append(
-                    {
-                        "type": "keyword",
-                        "pattern": keyword,
-                        "matched_text": keyword,
-                        "source": "description",
-                        "source_info": {
-                            "text": (
-                                clean_text[:50] + "..."
-                                if len(clean_text) > 50
-                                else clean_text
-                            )
-                        },
-                    }
-                )
-
-        # 2. 복잡한 패턴 확인
-        for pattern in SPONSOR_PATTERNS:
-            match = re.search(pattern, clean_text)
-            if match:
-                matched_text = match.group(0)
-                found_indicators.append(
-                    {
-                        "type": "pattern",
-                        "pattern": pattern,
-                        "matched_text": matched_text,
-                        "source": "description",
-                        "source_info": {
-                            "text": (
-                                clean_text[:50] + "..."
-                                if len(clean_text) > 50
-                                else clean_text
-                            )
-                        },
-                    }
-                )
-
-        # 3. 특수 케이스 확인
-        for special_case in SPECIAL_CASE_PATTERNS:
-            if "업체 + 지원/제공" == special_case:
-                if "업체" in clean_text and any(
-                    term in clean_text for term in ["지원", "제공"]
-                ):
-                    found_indicators.append(
-                        {
-                            "type": "special_case",
-                            "pattern": special_case,
-                            "matched_text": (
-                                clean_text[:50] + "..."
-                                if len(clean_text) > 50
-                                else clean_text
-                            ),
-                            "source": "description",
-                            "source_info": {
-                                "text": (
-                                    clean_text[:50] + "..."
-                                    if len(clean_text) > 50
-                                    else clean_text
-                                )
-                            },
-                        }
-                    )
-            elif "후기 + 지원/제공" == special_case:
-                if "후기" in clean_text and any(
-                    term in clean_text for term in ["지원", "제공"]
-                ):
-                    found_indicators.append(
-                        {
-                            "type": "special_case",
-                            "pattern": special_case,
-                            "matched_text": (
-                                clean_text[:50] + "..."
-                                if len(clean_text) > 50
-                                else clean_text
-                            ),
-                            "source": "description",
-                            "source_info": {
-                                "text": (
-                                    clean_text[:50] + "..."
-                                    if len(clean_text) > 50
-                                    else clean_text
-                                )
-                            },
-                        }
-                    )
-            elif "광고 + 콘텐츠" == special_case:
-                if "광고" in clean_text and any(
-                    term in clean_text for term in ["콘텐츠", "포스팅", "게시물"]
-                ):
-                    found_indicators.append(
-                        {
-                            "type": "special_case",
-                            "pattern": special_case,
-                            "matched_text": (
-                                clean_text[:50] + "..."
-                                if len(clean_text) > 50
-                                else clean_text
-                            ),
-                            "source": "description",
-                            "source_info": {
-                                "text": (
-                                    clean_text[:50] + "..."
-                                    if len(clean_text) > 50
-                                    else clean_text
-                                )
-                            },
-                        }
-                    )
-            elif "AD + 포스팅" == special_case:
-                if ("AD" in clean_text or "ad" in clean_text.lower()) and any(
-                    term in clean_text for term in ["포스팅", "콘텐츠", "게시물"]
-                ):
-                    found_indicators.append(
-                        {
-                            "type": "special_case",
-                            "pattern": special_case,
-                            "matched_text": (
-                                clean_text[:50] + "..."
-                                if len(clean_text) > 50
-                                else clean_text
-                            ),
-                            "source": "description",
-                            "source_info": {
-                                "text": (
-                                    clean_text[:50] + "..."
-                                    if len(clean_text) > 50
-                                    else clean_text
-                                )
-                            },
-                        }
-                    )
-
-        return found_indicators
-
     def calculate_sponsor_probability(
         self, found_patterns: List[Dict[str, str]]
     ) -> float:
@@ -330,7 +177,6 @@ class FilterService:
             # 이미 존재하는 패턴이면 소스가 더 신뢰할 수 있는 경우만 업데이트
             if pattern_key in unique_patterns:
                 current_source = pattern.get("source", "unknown")
-                existing_source = unique_patterns[pattern_key].get("source", "unknown")
 
                 # OCR 및 스티커는 가장 신뢰할 수 있는 소스 (우선순위 증가)
                 if "ocr" in current_source.lower() or "image" in current_source.lower():
@@ -345,225 +191,44 @@ class FilterService:
             unique_patterns[pattern_key] = pattern
 
         # 고유한 패턴만 사용
-        filtered_patterns = list(unique_patterns.values())
+        unique_pattern_list = list(unique_patterns.values())
 
-        # 학술/정보성 콘텐츠 키워드가 포함된 경우 감지
-        academic_keywords = [
-            "학술",
-            "연구",
-            "논문",
-            "학회",
-            "교육",
-            "수업",
-            "강의",
-            "정보",
-            "참고",
-            "참조",
-            "도서관",
-            "자료",
-            "문헌",
-        ]
-        is_academic_context = False
-        for pattern in filtered_patterns:
-            matched_text = pattern.get("matched_text", "")
-            source_info = pattern.get("source_info", {})
-            text = source_info.get("text", "")
-
-            for keyword in academic_keywords:
-                if keyword in matched_text or (text and keyword in text):
-                    is_academic_context = True
-                    break
-
-        # 패턴별 가중치 적용
-        indicator_prob = 0.0
-        max_prob = 0.0
-        patterns_list = []
-
-        # 스티커 소스 확인
-        has_sticker_source = any(
-            "sticker" in p.get("source", "").lower() for p in filtered_patterns
-        )
-
-        # OCR 이미지 소스 확인
-        has_ocr_source = any(
-            (
-                "ocr" in p.get("source", "").lower()
-                or "image" in p.get("source", "").lower()
-            )
-            for p in filtered_patterns
-        )
-
-        for pattern in filtered_patterns:
+        # 각 패턴의 확률 값 추출
+        pattern_probabilities = []
+        for pattern in unique_pattern_list:
+            logger.info(f"패턴: {pattern}")
+            # 패턴에 직접 확률 값이 있으면 그 값을 사용
+            if "probability" in pattern:
+                pattern_probabilities.append(pattern["probability"])
+                continue
+                
+            # 없으면 패턴 유형과 소스에 따른 가중치 사용
             pattern_type = pattern.get("type", "unknown")
             source = pattern.get("source", "unknown")
-            pattern_text = pattern.get("pattern", "")
 
-            # 패턴 유형 가중치와 소스 가중치 계산
-            type_weight = all_weights.get(pattern_type, 0.2)
+            # 패턴 유형 가중치
+            type_weight = all_weights.get(pattern_type, 0.5)
+            # 소스 가중치
+            source_weight = all_weights.get(source, 0.5)
 
-            # 소스별 가중치 조정
-            source_weight = all_weights.get(source, 0.3)
+            logger.info(f"패턴 유형: {pattern_type}, 소스: {source}, 가중치: {type_weight}, {source_weight}")
+            # 둘 중 더 높은 가중치 사용
+            probability = max(type_weight, source_weight)
+            pattern_probabilities.append(probability)
 
-            # OCR 및 이미지 소스의 가중치 증가
-            if "ocr" in source.lower() or "image" in source.lower():
-                source_weight = 0.85  # OCR/이미지 소스는 매우 높은 가중치
+        # 가중치가 없으면 0 반환
+        if not pattern_probabilities:
+            return 0.0
+        
+        # 최대 확률 값 사용
+        max_probability = max(pattern_probabilities)
+        logger.info(f"최대 협찬 확률: {max_probability:.2f} (패턴 수: {len(pattern_probabilities)})")
 
-            # 스티커 소스의 경우도 높은 가중치 유지
-            if "sticker" in source.lower():
-                source_weight = 0.9  # 스티커 소스는 매우 높은 가중치
+        # 여러 패턴이 발견된 경우 추가 가중치 부여 (최대 0.95까지)
+        if len(pattern_probabilities) > 1:
+            # 패턴 수에 따라 가중치 증가 (최대 0.15 추가)
+            bonus = min(0.05 * (len(pattern_probabilities) - 1), 0.15)
+            max_probability = min(max_probability + bonus, 0.95)
+            logger.info(f"여러 패턴 발견으로 인한 보너스 적용 후 확률: {max_probability:.2f} (보너스: +{bonus:.2f})")
 
-            # 학술 컨텍스트인 경우 가중치 감소 (OCR과 스티커 제외)
-            if is_academic_context and not (
-                "sticker" in source.lower()
-                or "ocr" in source.lower()
-                or "image" in source.lower()
-            ):
-                source_weight *= 0.6  # 학술적 맥락에서는 협찬 가능성 40% 감소
-
-            # 패턴 자체의 가중치 가져오기
-            content_weight = 0.0
-
-            if pattern_type == "pattern":
-                for p, w in SPONSOR_PATTERNS.items():
-                    if re.search(p, pattern_text, re.IGNORECASE):
-                        content_weight = w
-                        break
-            elif pattern_type == "special_case":
-                for p, w in SPECIAL_CASE_PATTERNS.items():
-                    if p in pattern_text or re.search(p, pattern_text, re.IGNORECASE):
-                        content_weight = w
-                        break
-            elif pattern_type == "keyword":
-                content_weight = SPONSOR_KEYWORDS.get(pattern_text.lower(), 0.2)
-
-            # 최종 확률 계산 (타입과 소스 가중치 증가, 콘텐츠 가중치 감소)
-            # OCR 소스인 경우 소스 가중치 영향력 증가
-            if (
-                "ocr" in source.lower()
-                or "image" in source.lower()
-                or "sticker" in source.lower()
-            ):
-                pattern_prob = (
-                    (type_weight * 0.3) + (source_weight * 0.6) + (content_weight * 0.1)
-                )
-            else:
-                pattern_prob = (
-                    (type_weight * 0.5) + (source_weight * 0.3) + (content_weight * 0.2)
-                )
-
-            # 최대 확률 업데이트
-            max_prob = max(max_prob, pattern_prob)
-
-            # 모든 패턴의 확률을 결합
-            indicator_prob += pattern_prob
-            patterns_list.append(pattern_text)
-
-        # OCR이나 스티커에서 발견된 패턴이 있는 경우 최소 확률 설정
-        if has_ocr_source or has_sticker_source:
-            min_probability = 0.7  # OCR/스티커가 있으면 최소 70% 이상
-
-            # 리뷰노트 스티커는 100% 확률 지정 (공정위 표시는 명확한 협찬)
-            reviewnote_patterns = [
-                p
-                for p in filtered_patterns
-                if (
-                    "reviewnote" in p.get("source", "").lower()
-                    or (
-                        p.get("source_info", {}).get("image_url", "")
-                        and "reviewnote"
-                        in p.get("source_info", {}).get("image_url", "")
-                    )
-                )
-            ]
-
-            if reviewnote_patterns:
-                return 1.0  # 리뷰노트 스티커가 있으면 100% 확률
-
-            # OCR이나 스티커에서 명확한 스폰서 키워드가 발견된 경우
-            sponsor_keywords = ["광고", "협찬", "AD", "제공", "Sponsored", "PPL"]
-            ocr_sticker_patterns = [
-                p
-                for p in filtered_patterns
-                if (
-                    "ocr" in p.get("source", "").lower()
-                    or "image" in p.get("source", "").lower()
-                    or "sticker" in p.get("source", "").lower()
-                )
-            ]
-
-            if any(
-                p.get("pattern", "").lower() in sponsor_keywords
-                for p in ocr_sticker_patterns
-            ):
-                min_probability = 0.85  # 명확한 스폰서 키워드가 있으면 최소 85%
-        else:
-            min_probability = 0.0
-
-        # 단일 키워드 케이스 처리
-        if (
-            len(filtered_patterns) == 1
-            and filtered_patterns[0].get("type") == "keyword"
-        ):
-            pattern_text = filtered_patterns[0].get("pattern", "").lower()
-            source = filtered_patterns[0].get("source", "").lower()
-
-            # OCR이나 스티커에서 발견된 키워드는 높은 확률 유지
-            if "ocr" in source or "image" in source or "sticker" in source:
-                if pattern_text in ["광고", "협찬", "AD", "Sponsored", "PPL"]:
-                    return max(min_probability, min(max_prob, 0.9))
-                if pattern_text in ["제공", "지원"]:
-                    return max(min_probability, min(max_prob, 0.8))
-                return max(min_probability, min(max_prob, 0.7))
-
-            # 일반적인 단일 키워드의 경우 최대 확률 제한
-            if pattern_text in ["광고", "후기"]:
-                return min(max_prob, 0.4)
-
-            # 다른 단일 키워드의 경우 최대 50%로 제한
-            return min(max_prob, 0.5)
-
-        # 확률 상한선 설정
-        if has_ocr_source or has_sticker_source:
-            # OCR이나 스티커에서 발견된 경우, 패턴에 따라 상한선 조정
-            # 제공, 지원 같은 일반적 단어만 있는 경우 제한
-            general_keywords = ["제공", "지원", "후기", "작성"]
-            if all(
-                p.get("pattern", "").lower() in general_keywords
-                for p in filtered_patterns
-            ):
-                max_probability = 0.8  # 최대 80%
-            else:
-                max_probability = 0.95  # 최대 95%
-        else:
-            max_probability = 0.9  # 일반적인 경우 최대 90%
-
-        # 종합 확률 계산 (여러 패턴이 있는 경우)
-        # 정규화 - 패턴 개수가 많을수록 가중치 분산
-        normalized_indicator_prob = indicator_prob / (1 + len(filtered_patterns) * 0.2)
-
-        # 패턴 간 중복 가능성을 고려하여 결합 확률 계산
-        # OCR이나 스티커가 있으면 max_prob의 영향력 증가
-        if has_ocr_source or has_sticker_source:
-            combined_prob = normalized_indicator_prob * 0.2 + max_prob * 0.8
-        else:
-            combined_prob = normalized_indicator_prob * 0.3 + max_prob * 0.7
-
-        # 일반적 키워드만 포함된 경우 확률 제한 (OCR이나 스티커가 없는 경우)
-        if not (has_ocr_source or has_sticker_source):
-            common_keywords = ["광고", "후기", "제공", "지원", "작성"]
-            only_common_keywords = all(
-                p.get("pattern", "").lower() in common_keywords
-                for p in filtered_patterns
-            )
-
-            if only_common_keywords:
-                # 키워드 개수에 따른 최대값 제한
-                if len(filtered_patterns) == 1:
-                    return min(combined_prob, 0.4)  # 단일 키워드 40% 제한
-                elif len(filtered_patterns) == 2:
-                    return min(combined_prob, 0.6)  # 두 개 키워드 60% 제한
-                else:
-                    return min(combined_prob, 0.8)  # 여러 키워드 80% 제한
-
-        # 최종 확률 계산 (OCR/스티커 기반 최소 확률 적용)
-        return max(min_probability, min(combined_prob, max_probability))
+        return max_probability

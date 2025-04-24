@@ -1,14 +1,13 @@
 import re
 import logging
 from app.core.constants import (
+    EXACT_SPONSOR_KEYWORDS_PATTERNS,
     SPONSOR_PATTERNS,
-    SPECIAL_CASE_PATTERNS,
     SPONSOR_KEYWORDS,
     SPONSOR_CLASS_PATTERNS,
     NON_SPONSOR_CLASS_PATTERNS,
     STICKER_DOMAINS,
 )
-from bs4 import BeautifulSoup  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -26,171 +25,175 @@ class PatternAnalyzerService:
     # 키워드 키만 추출
     SPONSOR_KEYWORDS = list(SPONSOR_KEYWORDS.keys())
     
-    def check_ocr_text_for_sponsors(self, ocr_text: str, image_url: str = "") -> list:
-        """OCR 텍스트에서 협찬 패턴을 검색합니다."""
-        if not ocr_text:
+    def check_text_for_sponsors(self, text: str, source: str = "description") -> list:
+        """텍스트에서 협찬 패턴을 검색합니다. (FilterService와 공유하는 메서드)"""
+        if not text:
             return []
 
         # 공백이 너무 많은 경우를 위해 정규화 처리 (문자 사이 공백 제거)
-        normalized_text = re.sub(r"\s+", "", ocr_text)
+        normalized_text = re.sub(r"\s+", "", text)
         
         # 모든 발견된 패턴과 키워드 저장
         found_patterns = []
-
-        # 스티커 도메인에서 온 짧은 OCR 텍스트 처리 (4글자 이내)
-        if image_url and len(normalized_text) <= 4 and len(normalized_text) > 0:
-            # 이미지 URL이 STICKER_DOMAINS 중 하나에 속하는지 확인
-            if any(domain in image_url for domain in self.STICKER_DOMAINS):
+        logger.info(f"정규화된 텍스트: {normalized_text}")
+        # 1. 정확한 협찬 키워드 패턴 확인 (즉시 90% 확률로 반환)
+        for exact_keyword in EXACT_SPONSOR_KEYWORDS_PATTERNS:
+            if exact_keyword in normalized_text:
                 found_patterns.append({
-                    "type": "sticker_text",
-                    "pattern": "sticker_text",
-                    "matched_text": ocr_text,
-                    "probability": 0.8,  # 80% 확률
-                    "version": "original"
+                    "type": "exact_keyword",
+                    "pattern": exact_keyword,
+                    "matched_text": normalized_text,
+                    "probability": 0.9,  # 90% 확률
+                    "source": source
                 })
-                logger.info(f"스티커 도메인({image_url})에서 짧은 텍스트 발견 (협찬 확률 80%): '{ocr_text}'")
-                return found_patterns
-                
-        # 원본 텍스트와 정규화 텍스트 모두에서 검사
-        for text_version in [ocr_text, normalized_text]:
-            # 1. 단일 키워드 확인
-            for keyword in self.SPONSOR_KEYWORDS:
-                if keyword in text_version:
-                    found_patterns.append(
-                        {
-                            "type": "keyword",
-                            "pattern": keyword,
-                            "matched_text": keyword,
-                            "version": (
-                                "normalized"
-                                if text_version == normalized_text
-                                else "original"
-                            ),
-                        }
-                    )
-
-            # 2. 복잡한 패턴 확인 (가능한 경우)
-            if (
-                text_version != normalized_text
-            ):  # 정규화된 텍스트는 정규식 패턴에 맞지 않음
-                for pattern in self.SPONSOR_TEXT_PATTERNS:
-                    match = re.search(pattern, text_version)
-                    if match:
-                        matched_text = match.group(0)
-                        found_patterns.append(
-                            {
-                                "type": "pattern",
-                                "pattern": pattern,
-                                "matched_text": matched_text,
-                                "version": "original",
-                            }
-                        )
-
-        # 3. 특수 케이스 검사 (모든 텍스트 버전)
-        for special_case, _ in SPECIAL_CASE_PATTERNS.items():
-            if "업체 + 지원/제공" == special_case:
-                # "업체" + "지원/제공" 조합 확인 (순서 무관)
-                if ("업체" in ocr_text or "업체" in normalized_text) and (
-                    any(term in ocr_text for term in ["지원", "제공"])
-                    or any(term in normalized_text for term in ["지원", "제공"])
-                ):
-                    found_patterns.append(
-                        {
-                            "type": "special_case",
-                            "pattern": special_case,
-                            "matched_text": ocr_text,
-                        }
-                    )
-            elif "후기 + 지원/제공" == special_case:
-                # "후기" + "지원/제공" 조합 확인
-                if ("후기" in ocr_text or "후기" in normalized_text) and (
-                    any(term in ocr_text for term in ["지원", "제공"])
-                    or any(term in normalized_text for term in ["지원", "제공"])
-                ):
-                    found_patterns.append(
-                        {
-                            "type": "special_case",
-                            "pattern": special_case,
-                            "matched_text": ocr_text,
-                        }
-                    )
-            elif "광고 + 콘텐츠" == special_case:
-                # "광고" + "콘텐츠" 조합 확인
-                if ("광고" in ocr_text or "광고" in normalized_text) and (
-                    any(term in ocr_text for term in ["콘텐츠", "포스팅", "게시물"])
-                    or any(
-                        term in normalized_text
-                        for term in ["콘텐츠", "포스팅", "게시물"]
-                    )
-                ):
-                    found_patterns.append(
-                        {
-                            "type": "special_case",
-                            "pattern": special_case,
-                            "matched_text": ocr_text,
-                        }
-                    )
-            elif "AD + 포스팅" == special_case:
-                # "AD" + "포스팅" 조합 확인
-                if (
-                    "AD" in ocr_text
-                    or "ad" in ocr_text.lower()
-                    or "AD" in normalized_text
-                ) and (
-                    any(term in ocr_text for term in ["포스팅", "콘텐츠", "게시물"])
-                    or any(
-                        term in normalized_text
-                        for term in ["포스팅", "콘텐츠", "게시물"]
-                    )
-                ):
-                    found_patterns.append(
-                        {
-                            "type": "special_case",
-                            "pattern": special_case,
-                            "matched_text": ocr_text,
-                        }
-                    )
-
-        return found_patterns
+                logger.info(f"정확한 협찬 키워드 발견 (협찬 확률 90%): '{exact_keyword}'")
+                return found_patterns  # 즉시 반환
         
-    def check_html_structure_for_sponsors(self, soup: BeautifulSoup) -> dict | None:
-        """HTML 구조에서 협찬 관련 요소를 확인합니다."""
-        sponsor_elements = []
-        for pattern in self.SPONSOR_CLASS_PATTERNS:
-            elements = soup.find_all(class_=re.compile(pattern))
-            for elem in elements:
-                # 협찬과 무관한 클래스를 가진 요소 제외
-                elem_classes = " ".join(elem.get("class", []))
-                if not any(
-                    re.search(non_pattern, elem_classes)
-                    for non_pattern in self.NON_SPONSOR_CLASS_PATTERNS
-                ):
-                    sponsor_elements.append(elem)
+        # 2. 일반 키워드 확인
+        for keyword in SPONSOR_KEYWORDS:
+            if keyword in normalized_text:
+                found_patterns.append({
+                    "type": "keyword",
+                    "pattern": keyword,
+                    "matched_text": keyword,
+                    "probability": 0.7,  # 70% 확률
+                    "source": source
+                })
+                logger.info(f"협찬 키워드 발견 (협찬 확률 70%): '{keyword}'")
         
-        if not sponsor_elements:
-            return None
-            
-        # 각 요소의 클래스와 텍스트 정보 추가
-        sponsor_element_details = []
-        for elem in sponsor_elements:
-            elem_class = elem.get("class", [])
-            elem_text = elem.get_text(strip=True)[:100]  # 텍스트가 너무 길면 자름
-            sponsor_element_details.append(
-                {
-                    "class": (
-                        " ".join(elem_class)
-                        if isinstance(elem_class, list)
-                        else elem_class
-                    ),
-                    "text": elem_text if elem_text else "(텍스트 없음)",
-                }
-            )
-        
-        if sponsor_element_details:
-            return {
-                "is_sponsored": True,
-                "element_type": "html_structure",
-                "sponsor_elements": sponsor_element_details
+        # 3. 특수 케이스 검사
+        special_case_checks = {
+            "업체 + 지원/제공": {
+                "terms1": ["업체"],
+                "terms2": ["지원", "제공"],
+                "probability": 0.85
+            },
+            "후기 + 지원/제공": {
+                "terms1": ["후기"],
+                "terms2": ["지원", "제공"],
+                "probability": 0.85
+            },
+            "광고 + 콘텐츠": {
+                "terms1": ["광고"],
+                "terms2": ["콘텐츠", "포스팅", "게시물"],
+                "probability": 0.85
+            },
+            "AD + 포스팅": {
+                "terms1": ["ad"],
+                "terms2": ["포스팅", "콘텐츠", "게시물"],
+                "probability": 0.85
             }
+        }
         
-        return None 
+        for case_name, case_info in special_case_checks.items():
+            terms1 = case_info["terms1"]
+            terms2 = case_info["terms2"]
+            probability = case_info.get("probability", 0.85)
+            
+            # 정규화된 텍스트에서 검사
+            if any(term in normalized_text for term in terms1) and \
+               any(term in normalized_text for term in terms2):
+                found_patterns.append({
+                    "type": "special_case",
+                    "pattern": case_name,
+                    "matched_text": normalized_text,
+                    "probability": probability,
+                    "source": source
+                })
+                logger.info(f"특수 케이스 발견 (협찬 확률 {probability*100}%): '{case_name}' (텍스트: {normalized_text})")
+        
+        return found_patterns
+    
+    def check_ocr_text_for_sponsors(self, ocr_text: str) -> list:
+        """OCR 텍스트에서 협찬 패턴을 검색합니다."""
+        # 기본 텍스트 검사 로직 재사용
+        return self.check_text_for_sponsors(ocr_text, source="ocr")
+    
+    def analyze_html_elements(self, elements):
+        """HTML 요소에서 협찬 패턴을 분석합니다."""
+        found_patterns = []
+        
+        if not elements:
+            return found_patterns
+        
+        for elem_detail in elements:
+            # 클래스와 텍스트 정규화
+            elem_class = re.sub(r"\s+", "", elem_detail.get('class', '')).lower()
+            elem_text = elem_detail.get('text', '')
+            
+            # 1. 클래스에서 정확한 협찬 키워드 확인 (즉시 반환)
+            for exact_keyword in EXACT_SPONSOR_KEYWORDS_PATTERNS:
+                if exact_keyword in elem_class:
+                    found_patterns.append({
+                        "type": "exact_keyword",
+                        "pattern": exact_keyword,
+                        "matched_text": elem_detail.get('class', ''),
+                        "probability": 0.9,  # 90% 확률
+                        "source": "html_class"
+                    })
+                    logger.info(f"HTML 클래스에서 정확한 협찬 키워드 발견 (협찬 확률 90%): '{exact_keyword}'")
+                    return found_patterns  # 즉시 반환
+            
+            # 2. 클래스에 협찬 관련 키워드가 있는지 확인
+            for keyword in SPONSOR_CLASS_PATTERNS:
+                if keyword in elem_class:
+                    found_patterns.append({
+                        "type": "html_class",
+                        "pattern": keyword,
+                        "matched_text": elem_detail.get('class', ''),
+                        "probability": 0.9,  # 90% 확률
+                        "source": "html_class"
+                    })
+                    logger.info(f"HTML 클래스에서 협찬 키워드 발견 (협찬 확률 90%): '{keyword}' (클래스: {elem_detail.get('class', '')})")
+            
+            # 3. 텍스트에서 협찬 패턴 확인
+            text_patterns = self.check_text_for_sponsors(elem_text, source="html_text")
+            found_patterns.extend(text_patterns)
+        
+        return found_patterns
+    
+    def analyze_detection_result(self, detection_result):
+        """감지 결과를 분석하여 협찬 확률을 계산합니다."""
+        found_patterns = []
+        
+        # 1. 스티커 OCR 결과 분석
+        sticker_ocr = detection_result.get('debug_info', {}).get('sticker_ocr', '')
+    
+        if sticker_ocr:
+            ocr_patterns = self.check_ocr_text_for_sponsors(sticker_ocr)
+            found_patterns.extend(ocr_patterns)
+        
+        # 2. HTML 요소 분석
+        sponsor_elements = []
+        indicators = detection_result.get('indicators', [])
+        
+        # 한 번의 반복으로 모든 HTML 요소 추출
+        for i, indicator in enumerate(indicators):
+            if indicator.startswith("협찬 관련 HTML 요소 발견:"):
+                # 하위 항목 추출
+                j = i + 1
+                while j < len(indicators) and indicators[j].startswith("  "):
+                    parts = indicators[j].split(": ", 1)
+                    if len(parts) > 1:
+                        class_text = parts[1].split(", 텍스트: ")
+                        if len(class_text) > 1:
+                            sponsor_elements.append({
+                                'class': class_text[0].replace("클래스: ", ""),
+                                'text': class_text[1]
+                            })
+                    j += 1
+        
+        if sponsor_elements:
+            html_patterns = self.analyze_html_elements(sponsor_elements)
+            found_patterns.extend(html_patterns)
+        
+        # 3. 최종 확률 계산
+        max_probability = 0
+        if found_patterns:
+            max_probability = max(pattern.get('probability', 0) for pattern in found_patterns)
+        
+        return {
+            "is_sponsored": max_probability >= 0.7,  # 70% 이상이면 협찬으로 판단
+            "probability": max_probability,
+            "patterns": found_patterns
+        } 
