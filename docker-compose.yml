@@ -1,0 +1,22 @@
+version: "3"
+
+services:
+  sponsor-filter:
+    build: .
+    image: sponsor-filter:latest
+    container_name: sponsor-filter
+    ports:
+      - "8000:8000"
+    environment:
+      - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
+      - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
+      - TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata/
+    volumes:
+      - ./cache:/app/cache
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+ 
