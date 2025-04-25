@@ -1,0 +1,42 @@
+{
+  "family": "ndns-task",
+  "executionRoleArn": "arn:aws:iam:::role/ecsTaskExecutionRole",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "ndns",
+      "image": ".dkr.ecr.ap-northeast-2.amazonaws.com/ndns:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {"name": "NAVER_CLIENT_ID", "value": "your_client_id"},
+        {"name": "NAVER_CLIENT_SECRET", "value": "your_client_secret"},
+        {"name": "TESSDATA_PREFIX", "value": "/usr/share/tesseract-ocr/4.00/tessdata/"}
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/ndns",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "ndns"
+        }
+      }
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048"
+}
