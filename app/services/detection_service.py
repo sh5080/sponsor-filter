@@ -3,15 +3,7 @@ import re
 from app.models.schemas import SponsorDetectionResult
 import logging
 import os
-from app.core.constants import (
-    SPONSOR_PATTERNS,
-    SPONSOR_KEYWORDS,
-    NON_SPONSOR_CLASS_PATTERNS,
-    STICKER_DOMAINS,
-    STICKER_CLASSES,
-    SPONSOR_CLASS_PATTERNS,
-)
-from pathlib import Path
+
 from .ocr_service import OCRService
 from .html_crawler_service import HTMLCrawlerService
 from .html_parser_service import HTMLParserService
@@ -38,18 +30,6 @@ class DetectionService:
         self.html_crawler = HTMLCrawlerService()
         self.html_parser = HTMLParserService()
         self.pattern_analyzer = PatternAnalyzerService()
-    
-    # 중앙에서 관리되는 상수 사용
-    STICKER_DOMAINS = STICKER_DOMAINS
-    STICKER_CLASSES = STICKER_CLASSES
-    SPONSOR_CLASS_PATTERNS = SPONSOR_CLASS_PATTERNS
-    NON_SPONSOR_CLASS_PATTERNS = NON_SPONSOR_CLASS_PATTERNS
-
-    # 패턴 키만 추출하여 정규 표현식 패턴 목록 생성
-    SPONSOR_TEXT_PATTERNS = list(SPONSOR_PATTERNS.keys())
-
-    # 키워드 키만 추출
-    SPONSOR_KEYWORDS = list(SPONSOR_KEYWORDS.keys())
 
     # 스티커에서 협찬 패턴 확인 함수
     async def check_sticker_for_sponsors(self, soup: BeautifulSoup) -> dict | None:

@@ -1,16 +1,9 @@
-from typing import Dict, List, Any
+from typing import Dict, List
 from app.services.naver_service import NaverService
 from app.services.detection_service import DetectionService
 from app.services.pattern_analyzer_service import PatternAnalyzerService
 from app.models.schemas import BlogPost, SearchResponse, SearchRequest
-from app.core.constants import (
-    SPONSOR_PATTERNS,
-    SPECIAL_CASE_PATTERNS,
-    SPONSOR_KEYWORDS,
-    PATTERN_TYPE_WEIGHTS,
-    SOURCE_WEIGHTS,
-)
-import re
+from app.core.constants import PATTERN_TYPE_WEIGHTS, SOURCE_WEIGHTS
 import asyncio
 import logging
 
