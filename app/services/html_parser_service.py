@@ -164,7 +164,7 @@ class HTMLParserService:
         return None
     
     def find_first_paragraph(self, soup: BeautifulSoup) -> tuple[str, str] | None:
-        """첫 번째 문단을 찾습니다."""
+        """첫 번째 문단과 초반부의 인용구를 찾습니다."""
         # 본문 영역 찾기
         content_area = None
         possible_content_selectors = [
@@ -186,16 +186,33 @@ class HTMLParserService:
                 logger.info(f"본문 영역 발견: {selector}")
                 break
         
-        # 본문 영역을 찾지 못한 경우 전체 HTML에서 검색
         if not content_area:
             logger.info("본문 영역을 찾을 수 없어 전체 HTML에서 검색합니다.")
             content_area = soup
+
+        # 첫 번째 문단과 인용구를 저장할 변수
+        first_paragraph = ""
+        quotation_text = ""
+        selector_used = ""
+
+        # 1. 인용구 확인 (처음 2개까지만)
+        quotation_selectors = [
+            ".se-quotation-container",  # 스마트에디터 2.0 인용구
+            "blockquote"               # 일반 인용구
+        ]
         
-        # 첫 번째 문단 추출 시도
-        first_paragraph = None
-        selector_used = ""  # 빈 문자열로 초기화
-        
-        # 네이버 블로그 스마트에디터 문단 검색
+        for selector in quotation_selectors:
+            quotes = content_area.select(selector)[:2]  # 처음 2개만
+            for quote in quotes:
+                text = quote.get_text(strip=True)
+                if text and len(text) > 5:
+                    quotation_text = text
+                    logger.info(f"인용구 발견: {text[:100]}...")
+                    break
+            if quotation_text:
+                break
+
+        # 2. 일반 문단 확인
         paragraph_selectors = [
             ".se-text-paragraph",  # 스마트에디터 2.0 문단
             ".se-module-text p",   # 스마트에디터 모듈 내 문단
@@ -207,22 +224,17 @@ class HTMLParserService:
         for selector in paragraph_selectors:
             paragraphs = content_area.select(selector)
             if paragraphs:
-                # 공백만 있는 문단은 건너뛰기
-                for p in paragraphs:
-                    text = p.get_text(strip=True)
-                    if text and len(text) > 5:  # 최소 5자 이상인 문단 선택
-                        first_paragraph = p
-                        selector_used = selector
-                        break
-                
-                if first_paragraph:
+                text = paragraphs[0].get_text(strip=True)
+                if text and len(text) > 5:
+                    first_paragraph = text
+                    selector_used = selector
+                    logger.info(f"첫 번째 문단 발견: {text[:100]}...")
                     break
+
+        # 문단과 인용구 중 하나라도 발견된 경우
+        if first_paragraph or quotation_text:
+            # 둘 다 있는 경우 합치고, 하나만 있는 경우 있는 것만 반환
+            combined_text = " ".join(filter(None, [first_paragraph, quotation_text]))
+            return combined_text, selector_used
         
-        if not first_paragraph:
-            logger.info("첫 번째 문단을 찾을 수 없습니다.")
-            return None
-            
-        paragraph_text = first_paragraph.get_text(strip=True)
-        logger.info(f"첫 번째 문단 텍스트 ({selector_used}): {paragraph_text[:100]}...")
-        
-        return paragraph_text, selector_used 
+        return None 
