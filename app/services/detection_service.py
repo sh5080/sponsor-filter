@@ -66,7 +66,7 @@ class DetectionService:
         logger.info(f"스티커 OCR 결과: {ocr_text}")
         
         # OCR 결과에서 협찬 패턴 확인 (이미지 URL 전달)
-        found_patterns = self.pattern_analyzer.check_ocr_text_for_sponsors(ocr_text, img_url)
+        found_patterns = self.pattern_analyzer.check_ocr_text_for_sponsors(ocr_text)
         
         if found_patterns:
             return {
@@ -99,7 +99,7 @@ class DetectionService:
         logger.info(f"이미지 OCR 결과: {ocr_text}")
         
         # OCR 결과에서 협찬 패턴 확인 (이미지 URL 전달)
-        found_patterns = self.pattern_analyzer.check_ocr_text_for_sponsors(ocr_text, img_url)
+        found_patterns = self.pattern_analyzer.check_ocr_text_for_sponsors(ocr_text)
         
         if found_patterns:
             return {
@@ -130,7 +130,6 @@ class DetectionService:
         
         # 문단에서 협찬 패턴 확인
         found_patterns = self.pattern_analyzer.check_ocr_text_for_sponsors(paragraph_text)
-        
         if found_patterns:
             return {
                 "is_sponsored": True,
@@ -199,15 +198,6 @@ class DetectionService:
                 if paragraph_result and paragraph_result["is_sponsored"]:
                     logger.info("문단에서 협찬 패턴 발견")
                     sponsored_result = paragraph_result
-                else:
-                    # 4. HTML 구조 확인
-                    logger.info("4단계: HTML 구조 확인")
-                    html_structure_result = self.pattern_analyzer.check_html_structure_for_sponsors(soup)
-                    debug_info["html_structure_check"] = html_structure_result
-                    
-                    if html_structure_result and html_structure_result["is_sponsored"]:
-                        logger.info("HTML 구조에서 협찬 패턴 발견")
-                        sponsored_result = html_structure_result
         
         # 협찬 여부 최종 판단
         is_sponsored = sponsored_result is not None and sponsored_result["is_sponsored"]
@@ -222,11 +212,9 @@ class DetectionService:
                     pattern_type = pattern_info["type"]
                     pattern = pattern_info["pattern"]
                     matched_text = pattern_info["matched_text"]
-                    version = pattern_info.get("version", "")
-                    
+                    probability = pattern_info["probability"]
                     # 텍스트 형태 지표 추가
-                    version_text = f", 버전: {version}" if version else ""
-                    indicator_text = f"{element_type.capitalize()} OCR에서 협찬 {pattern_type} 발견: '{matched_text}' (패턴: {pattern}, 이미지: {sponsored_result['img_url']}{version_text})"
+                    indicator_text = f"{element_type.capitalize()} OCR에서 협찬 {pattern_type} 발견: '{matched_text}' (패턴: {pattern}, 이미지: {sponsored_result['img_url']})"
                     indicators.append(indicator_text)
                     
                     # 구조화된 지표 추가
@@ -234,10 +222,10 @@ class DetectionService:
                         "type": pattern_type,
                         "pattern": pattern,
                         "matched_text": matched_text,
-                        "source": f"{element_type}_ocr",
+                        "source": element_type,
+                        "probability": probability,
                         "source_info": {
                             "image_url": sponsored_result["img_url"],
-                            "detection_method": version if version else "original"
                         }
                     }
                     structured_indicators.append(structured_indicator)
@@ -250,7 +238,8 @@ class DetectionService:
                     pattern_type = pattern_info["type"]
                     pattern = pattern_info["pattern"]
                     matched_text = pattern_info["matched_text"]
-                    
+                    probability = pattern_info["probability"]
+
                     # 텍스트 형태 지표 추가
                     indicator_text = f"첫 번째 문단에서 협찬 {pattern_type} 발견: '{matched_text}' (패턴: {pattern})"
                     indicators.append(indicator_text)
@@ -261,6 +250,7 @@ class DetectionService:
                         "type": pattern_type,
                         "pattern": pattern,
                         "matched_text": matched_text,
+                        "probability": probability,
                         "source": "first_paragraph",
                         "source_info": {
                             "text": paragraph_text[:100] + "..." if len(paragraph_text) > 100 else paragraph_text
